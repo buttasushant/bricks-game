@@ -3,9 +3,12 @@
 ## Overview
 
 The ball's initial speed at Level 1 is `0.3` pixels/ms, which feels sluggish and unengaging.
-The fix is a single-value change: increase `ballInitialSpeed` in `src/constants.js` from `0.3`
-to `0.5`. Because all per-level speed calculations derive from this constant, the fix
-automatically propagates to every level without touching the speed-scaling logic.
+The fix is a single-value change: increase `ballInitialSpeed` in the `GameConfig` object inside
+`game.html` from `0.3` to `0.5`. Because all per-level speed calculations derive from this
+constant, the fix automatically propagates to every level without touching the speed-scaling logic.
+
+The game is now a single self-contained `game.html` file — there are no separate `src/` modules.
+All constants, engine logic, and rendering live inline in the script block of `game.html`.
 
 ## Glossary
 
@@ -14,7 +17,7 @@ automatically propagates to every level without touching the speed-scaling logic
 - **Property (P)**: The desired behavior — Level 1 launches the ball at `≥ 0.5` pixels/ms
 - **Preservation**: The per-level speed-increment formula and all other game behaviors that must
   remain unchanged by the fix
-- **ballInitialSpeed**: The constant in `src/constants.js` that sets the base ball speed for
+- **ballInitialSpeed**: The value in the `GameConfig` object inside `game.html` that sets the base ball speed for
   Level 1 (currently `0.3`, target `0.5`)
 - **ballSpeedIncrement**: The constant (`0.02`) added per level above Level 1
 - **_levelSpeed**: The field in `GameEngine` computed as
@@ -69,7 +72,7 @@ This includes:
 
 Based on the bug description and code review, there is one clear root cause:
 
-1. **Hardcoded low constant**: `ballInitialSpeed` in `src/constants.js` is set to `0.3`.
+1. **Hardcoded low constant**: `ballInitialSpeed` in the `GameConfig` object inside `game.html` is set to `0.3`.
    `GameEngine.initLevel` reads this value directly:
    ```js
    this._levelSpeed = cfg.ballInitialSpeed + (levelIndex - 1) * cfg.ballSpeedIncrement;
@@ -104,7 +107,7 @@ differences between levels as before the fix.
 
 ### Changes Required
 
-**File**: `src/constants.js`
+**File**: `game.html` (inline `GameConfig` object in the `<script>` block)
 
 **Specific Changes**:
 1. **Update `ballInitialSpeed`**: Change the value from `0.3` to `0.5`
@@ -116,8 +119,8 @@ differences between levels as before the fix.
    ballInitialSpeed: 0.5,   // pixels/ms
    ```
 
-No other files require changes. `GameEngine` already reads `cfg.ballInitialSpeed` dynamically,
-so the fix propagates automatically to `initLevel` and `launchBall`.
+No other changes are required. `GameEngine.initLevel` already reads `cfg.ballInitialSpeed`
+dynamically, so the fix propagates automatically to `initLevel` and `launchBall`.
 
 ## Testing Strategy
 

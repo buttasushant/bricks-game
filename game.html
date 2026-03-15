@@ -19,7 +19,7 @@
 <body>
   <canvas id="gameCanvas"></canvas>
   <script>
-// ─── constants ───────────────────────────────────────────────────────────────
+// ─── Constants ───────────────────────────────────────────────────────────────
 const GameState = {
   START_SCREEN:     'START_SCREEN',
   PLAYING:          'PLAYING',
@@ -34,11 +34,11 @@ const GameConfig = {
   canvasWidth:          800,
   canvasHeight:         600,
   ballRadius:           8,
-  ballInitialSpeed:     0.3,
-  ballSpeedIncrement:   0.02,
+  ballInitialSpeed:     0.4,   // pixels/ms
+  ballSpeedIncrement:   0.02,  // added per level
   paddleWidth:          100,
   paddleHeight:         12,
-  paddleSpeed:          0.5,
+  paddleSpeed:          0.5,   // pixels/ms
   brickRows:            7,
   brickCols:            10,
   brickPadding:         4,
@@ -48,7 +48,7 @@ const GameConfig = {
   totalLevels:          10,
 };
 
-// ─── levels ──────────────────────────────────────────────────────────────────
+// ─── Levels ──────────────────────────────────────────────────────────────────
 const b1 = { hp: 1, points: 10 };
 const b2 = { hp: 2, points: 20 };
 const b3 = { hp: 3, points: 30 };
@@ -148,15 +148,9 @@ class InputHandler {
     const rect = this._canvas.getBoundingClientRect();
     this._mouseX = e.clientX - rect.left;
   }
-  _onKeyDown(e) {
-    this._keysDown.add(e.key);
-    this._keysPressedBuffer.add(e.key);
-  }
-  _onKeyUp(e) { this._keysDown.delete(e.key); }
-  update() {
-    this._keysPressed = new Set(this._keysPressedBuffer);
-    this._keysPressedBuffer.clear();
-  }
+  _onKeyDown(e) { this._keysDown.add(e.key); this._keysPressedBuffer.add(e.key); }
+  _onKeyUp(e)   { this._keysDown.delete(e.key); }
+  update() { this._keysPressed = new Set(this._keysPressedBuffer); this._keysPressedBuffer.clear(); }
   getMouseX() { return this._mouseX; }
   isKeyDown(key) { return this._keysDown.has(key); }
   wasKeyPressed(key) {
@@ -231,7 +225,7 @@ class GameEngine {
     if (!this._ball || this._ball.vx !== 0 || this._ball.vy !== 0) return;
     const speed = this._levelSpeed;
     const angle = Math.PI / 4;
-    this._ball.vx = speed * Math.cos(angle);
+    this._ball.vx =  speed * Math.cos(angle);
     this._ball.vy = -speed * Math.sin(angle);
   }
   update(dt) {
@@ -260,16 +254,16 @@ class GameEngine {
     const ball = this._ball, cfg = this._config;
     ball.x += ball.vx * dt;
     ball.y += ball.vy * dt;
-    if (ball.x - ball.radius <= 0)              { ball.vx =  Math.abs(ball.vx); ball.x = ball.radius; }
-    if (ball.x + ball.radius >= cfg.canvasWidth) { ball.vx = -Math.abs(ball.vx); ball.x = cfg.canvasWidth - ball.radius; }
-    if (ball.y - ball.radius <= 0)              { ball.vy =  Math.abs(ball.vy); ball.y = ball.radius; }
+    if (ball.x - ball.radius <= 0)               { ball.vx =  Math.abs(ball.vx); ball.x = ball.radius; }
+    if (ball.x + ball.radius >= cfg.canvasWidth)  { ball.vx = -Math.abs(ball.vx); ball.x = cfg.canvasWidth - ball.radius; }
+    if (ball.y - ball.radius <= 0)               { ball.vy =  Math.abs(ball.vy); ball.y = ball.radius; }
     this._checkPaddleCollision();
     if (!isFinite(ball.x) || !isFinite(ball.y) || !isFinite(ball.vx) || !isFinite(ball.vy)) this._resetBallToStart();
   }
   _checkPaddleCollision() {
     const ball = this._ball, paddle = this._paddle;
-    const overlaps = (ball.x + ball.radius > paddle.x) && (ball.x - ball.radius < paddle.x + paddle.width) &&
-                     (ball.y + ball.radius > paddle.y) && (ball.y - ball.radius < paddle.y + paddle.height);
+    const overlaps = ball.x + ball.radius > paddle.x && ball.x - ball.radius < paddle.x + paddle.width &&
+                     ball.y + ball.radius > paddle.y && ball.y - ball.radius < paddle.y + paddle.height;
     if (!overlaps || ball.vy <= 0) return;
     const speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
     const ratio = (ball.x - paddle.x) / paddle.width;
@@ -510,8 +504,7 @@ class Game {
 }
 
 // ─── Bootstrap ────────────────────────────────────────────────────────────────
-const canvas = document.getElementById('gameCanvas');
-new Game(canvas).start();
+new Game(document.getElementById('gameCanvas')).start();
   </script>
 </body>
 </html>

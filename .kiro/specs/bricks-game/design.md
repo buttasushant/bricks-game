@@ -4,14 +4,16 @@
 
 A web-based Breakout/Arkanoid-style game running entirely in the browser using HTML5 Canvas and vanilla JavaScript (no frameworks, no plugins). The player controls a paddle to bounce a ball and destroy all bricks across 10 progressively harder levels.
 
-The architecture follows a classic game loop pattern: a fixed-timestep update cycle drives physics and game state, while a render pass draws the current state each animation frame. Modules are separated by concern: Game Engine (logic/physics), Renderer (drawing), Input Handler (input capture), and a top-level Game controller that orchestrates state transitions.
+The entire game is delivered as a single `game.html` file — all logic, rendering, input handling, level data, and styles are inlined. This means the game can be opened directly in any browser by double-clicking the file, with no server or build step required.
+
+The architecture follows a classic game loop pattern: a fixed-timestep update cycle drives physics and game state, while a render pass draws the current state each animation frame. Classes are separated by concern within the single script block: `GameEngine` (logic/physics), `Renderer` (drawing), `InputHandler` (input capture), and a top-level `Game` controller that orchestrates state transitions.
 
 ### Technology Choices
 
 - HTML5 Canvas 2D API for rendering
-- Vanilla JavaScript (ES6 modules)
+- Vanilla JavaScript (plain `<script>` tag, no ES modules)
 - `requestAnimationFrame` for the game loop
-- No external dependencies — fully self-contained
+- No external dependencies — fully self-contained in a single `game.html` file
 
 ---
 
@@ -19,13 +21,13 @@ The architecture follows a classic game loop pattern: a fixed-timestep update cy
 
 ```mermaid
 graph TD
-    Browser["Browser / index.html"]
+    Browser["Browser (open game.html)"]
     Canvas["HTMLCanvasElement"]
     Game["Game (State Machine)"]
     Engine["GameEngine (Physics & Logic)"]
     Renderer["Renderer (Canvas Drawing)"]
     InputHandler["InputHandler (Keyboard & Mouse)"]
-    LevelData["LevelData (10 Level Definitions)"]
+    LevelData["LEVELS (10 Level Definitions)"]
 
     Browser --> Canvas
     Browser --> Game
@@ -140,7 +142,7 @@ class InputHandler {
 
 ### LevelData
 
-Pure data module — exports the 10 level definitions.
+Pure data — the `LEVELS` constant defined inline in `game.html`.
 
 ```js
 // Each level: array of rows, each row: array of brick descriptors
