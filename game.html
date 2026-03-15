@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bricks Game</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #111;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+    canvas { display: block; background: #000; }
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas"></canvas>
+  <script>
+// ─── constants ───────────────────────────────────────────────────────────────
+const GameState = {
+  START_SCREEN:     'START_SCREEN',
+  PLAYING:          'PLAYING',
+  PAUSED:           'PAUSED',
+  BALL_LOST:        'BALL_LOST',
+  LEVEL_TRANSITION: 'LEVEL_TRANSITION',
+  GAME_OVER:        'GAME_OVER',
+  VICTORY:          'VICTORY',
+};
+
+const GameConfig = {
+  canvasWidth:          800,
+  canvasHeight:         600,
+  ballRadius:           8,
+  ballInitialSpeed:     0.3,
+  ballSpeedIncrement:   0.02,
+  paddleWidth:          100,
+  paddleHeight:         12,
+  paddleSpeed:          0.5,
+  brickRows:            7,
+  brickCols:            10,
+  brickPadding:         4,
+  brickOffsetTop:       60,
+  brickOffsetLeft:      30,
+  levelCompletionBonus: 500,
+  totalLevels:          10,
+};
+
+// ─── levels ──────────────────────────────────────────────────────────────────
+const b1 = { hp: 1, points: 10 };
+const b2 = { hp: 2, points: 20 };
+const b3 = { hp: 3, points: 30 };
+const __ = null;
+
+const LEVELS = [
+  [
+    [b1,b1,b1,b1,b1,b1,b1,b1,b1,b1],
+    [b1,b1,b1,b1,b1,b1,b1,b1,b1,b1],
+    [b1,b1,b1,b1,b1,b1,b1,b1,b1,b1],
+  ],
+  [
+    [b1,b1,b1,b1,b1,b1,b1,b1,b1,b1],
+    [b1,b1,b1,b1,b1,b1,b1,b1,b1,b1],
+    [b1,b1,b1,b1,b1,b1,b1,b1,b1,b1],
+    [b1,b1,b1,b1,b1,b1,b1,b1,b1,b1],
+  ],
+  [
+    [b2,b2,b2,b2,b2,b2,b2,b2,b2,b2],
+    [b2,b1,b1,b1,b1,b1,b1,b1,b1,b2],
+    [b1,b2,b1,b1,b1,b1,b1,b1,b2,b1],
+    [b1,b1,b1,b1,b1,b1,b1,b1,b1,b1],
+  ],
+  [
+    [b2,b1,b2,b1,b2,b1,b2,b1,b2,b1],
+    [b1,b2,b1,b2,b1,b2,b1,b2,b1,b2],
+    [b2,b1,b2,b1,b2,b1,b2,b1,b2,b1],
+    [b1,b2,b1,b2,b1,b2,b1,b2,b1,b2],
+    [b2,b1,b2,b1,b2,b1,b2,b1,b2,b1],
+  ],
+  [
+    [__,__,__,__,b2,b2,__,__,__,__],
+    [__,__,__,b2,b2,b2,b2,__,__,__],
+    [__,__,b2,b2,b2,b2,b2,b2,__,__],
+    [__,b2,b2,b2,b2,b2,b2,b2,b2,__],
+    [b2,b2,b2,b2,b2,b2,b2,b2,b2,b2],
+  ],
+  [
+    [b3,b3,b3,b3,b3,b3,b3,b3,b3,b3],
+    [b3,b3,b3,b3,b3,b3,b3,b3,b3,b3],
+    [b2,b2,b2,b2,b2,b2,b2,b2,b2,b2],
+    [b1,b1,b1,b1,b1,b1,b1,b1,b1,b1],
+    [b1,b1,b1,b1,b1,b1,b1,b1,b1,b1],
+  ],
+  [
+    [b3,b3,b2,b2,b3,b3,b2,b2,b3,b3],
+    [b3,b2,b1,b2,b3,b3,b2,b1,b2,b3],
+    [b2,b1,b2,b3,b2,b2,b3,b2,b1,b2],
+    [b2,b2,b3,b1,b2,b2,b1,b3,b2,b2],
+    [b1,b2,b2,b2,b1,b1,b2,b2,b2,b1],
+    [b1,b1,b1,b2,b2,b2,b2,b1,b1,b1],
+  ],
+  [
+    [b3,b3,b3,b3,b3,b3,b3,b3,b3,b3],
+    [b3,b1,b1,b1,b1,b1,b1,b1,b1,b3],
+    [b3,b1,b2,b2,b2,b2,b2,b2,b1,b3],
+    [b3,b1,b2,b3,b3,b3,b3,b2,b1,b3],
+    [b3,b1,b1,b1,b1,b1,b1,b1,b1,b3],
+    [b3,b3,b3,b3,b3,b3,b3,b3,b3,b3],
+  ],
+  [
+    [b3,__,b3,__,b3,b3,__,b3,__,b3],
+    [__,b3,__,b3,__,__,b3,__,b3,__],
+    [b2,b2,b2,b2,b2,b2,b2,b2,b2,b2],
+    [b1,b2,b1,b2,b1,b1,b2,b1,b2,b1],
+    [b2,b1,b2,b1,b2,b2,b1,b2,b1,b2],
+    [b1,b1,b1,b1,b1,b1,b1,b1,b1,b1],
+    [b1,b1,b1,b1,b1,b1,b1,b1,b1,b1],
+  ],
+  [
+    [b3,b3,b3,b3,b3,b3,b3,b3,b3,b3],
+    [b3,b3,b3,b3,b3,b3,b3,b3,b3,b3],
+    [b3,b3,b3,b3,b3,b3,b3,b3,b3,b3],
+    [b3,b3,b3,b3,b3,b3,b3,b3,b3,b3],
+    [b3,b3,b3,b3,b3,b3,b3,b3,b3,b3],
+    [b3,b3,b3,b3,b3,b3,b3,b3,b3,b3],
+    [b3,b3,b3,b3,b3,b3,b3,b3,b3,b3],
+  ],
+];
+
+// ─── InputHandler ─────────────────────────────────────────────────────────────
+class InputHandler {
+  constructor(canvas) {
+    this._canvas = canvas;
+    this._mouseX = 0;
+    this._keysDown = new Set();
+    this._keysPressedBuffer = new Set();
+    this._keysPressed = new Set();
+    this._onMouseMove = this._onMouseMove.bind(this);
+    this._onKeyDown   = this._onKeyDown.bind(this);
+    this._onKeyUp     = this._onKeyUp.bind(this);
+    canvas.addEventListener('mousemove', this._onMouseMove);
+    window.addEventListener('keydown',   this._onKeyDown);
+    window.addEventListener('keyup',     this._onKeyUp);
+  }
+  _onMouseMove(e) {
+    const rect = this._canvas.getBoundingClientRect();
+    this._mouseX = e.clientX - rect.left;
+  }
+  _onKeyDown(e) {
+    this._keysDown.add(e.key);
+    this._keysPressedBuffer.add(e.key);
+  }
+  _onKeyUp(e) { this._keysDown.delete(e.key); }
+  update() {
+    this._keysPressed = new Set(this._keysPressedBuffer);
+    this._keysPressedBuffer.clear();
+  }
+  getMouseX() { return this._mouseX; }
+  isKeyDown(key) { return this._keysDown.has(key); }
+  wasKeyPressed(key) {
+    if (this._keysPressed.has(key)) { this._keysPressed.delete(key); return true; }
+    return false;
+  }
+  destroy() {
+    this._canvas.removeEventListener('mousemove', this._onMouseMove);
+    window.removeEventListener('keydown', this._onKeyDown);
+    window.removeEventListener('keyup',   this._onKeyUp);
+  }
+}
+
+// ─── GameEngine ───────────────────────────────────────────────────────────────
+class GameEngine {
+  constructor(config) {
+    this._config = config;
+    this._score = 0;
+    this._lives = 3;
+    this._currentLevel = 1;
+    this._ball = null;
+    this._paddle = null;
+    this._bricks = [];
+    this._inputHandler = null;
+    this._lastMouseX = null;
+    this._ballLost = false;
+    this._gameOver = false;
+    this._levelBonusAwarded = false;
+    this._levelSpeed = config.ballInitialSpeed;
+  }
+  setInputHandler(ih) {
+    this._inputHandler = ih;
+    this._lastMouseX = ih ? ih.getMouseX() : null;
+  }
+  initLevel(levelIndex) {
+    if (levelIndex < 1 || levelIndex > LEVELS.length) { console.warn('invalid level'); return; }
+    this._currentLevel = levelIndex;
+    const layout = LEVELS[levelIndex - 1];
+    const cfg = this._config;
+    this._levelSpeed = cfg.ballInitialSpeed + (levelIndex - 1) * cfg.ballSpeedIncrement;
+    this._levelBonusAwarded = false;
+    this._ballLost = false;
+    this._gameOver = false;
+    const brickWidth = (cfg.canvasWidth - 2 * cfg.brickOffsetLeft - (cfg.brickCols - 1) * cfg.brickPadding) / cfg.brickCols;
+    const brickHeight = 20;
+    this._bricks = [];
+    for (let row = 0; row < layout.length; row++) {
+      for (let col = 0; col < layout[row].length; col++) {
+        const d = layout[row][col];
+        if (!d) continue;
+        this._bricks.push({
+          col, row,
+          x: cfg.brickOffsetLeft + col * (brickWidth + cfg.brickPadding),
+          y: cfg.brickOffsetTop  + row * (brickHeight + cfg.brickPadding),
+          width: brickWidth, height: brickHeight,
+          hp: d.hp, maxHp: d.hp, points: d.points, active: true,
+        });
+      }
+    }
+    this._paddle = {
+      x: cfg.canvasWidth / 2 - cfg.paddleWidth / 2,
+      y: cfg.canvasHeight - 40,
+      width: cfg.paddleWidth, height: cfg.paddleHeight, speed: cfg.paddleSpeed,
+    };
+    this._ball = {
+      x: cfg.canvasWidth / 2, y: this._paddle.y - cfg.ballRadius,
+      vx: 0, vy: 0, radius: cfg.ballRadius,
+    };
+    if (this._inputHandler) this._lastMouseX = this._inputHandler.getMouseX();
+  }
+  launchBall() {
+    if (!this._ball || this._ball.vx !== 0 || this._ball.vy !== 0) return;
+    const speed = this._levelSpeed;
+    const angle = Math.PI / 4;
+    this._ball.vx = speed * Math.cos(angle);
+    this._ball.vy = -speed * Math.sin(angle);
+  }
+  update(dt) {
+    if (!this._ball || !this._paddle) return;
+    this._updatePaddle(dt);
+    this._updateBall(dt);
+    this._checkBrickCollisions();
+    this._checkBallLost();
+    this._checkLevelComplete();
+  }
+  _updatePaddle(dt) {
+    const input = this._inputHandler, paddle = this._paddle, cfg = this._config;
+    if (input) {
+      const mouseX = input.getMouseX();
+      if (mouseX !== this._lastMouseX) {
+        paddle.x = mouseX - paddle.width / 2;
+        this._lastMouseX = mouseX;
+      } else {
+        if (input.isKeyDown('ArrowLeft'))  paddle.x -= cfg.paddleSpeed * dt;
+        if (input.isKeyDown('ArrowRight')) paddle.x += cfg.paddleSpeed * dt;
+      }
+    }
+    paddle.x = Math.max(0, Math.min(paddle.x, cfg.canvasWidth - paddle.width));
+  }
+  _updateBall(dt) {
+    const ball = this._ball, cfg = this._config;
+    ball.x += ball.vx * dt;
+    ball.y += ball.vy * dt;
+    if (ball.x - ball.radius <= 0)              { ball.vx =  Math.abs(ball.vx); ball.x = ball.radius; }
+    if (ball.x + ball.radius >= cfg.canvasWidth) { ball.vx = -Math.abs(ball.vx); ball.x = cfg.canvasWidth - ball.radius; }
+    if (ball.y - ball.radius <= 0)              { ball.vy =  Math.abs(ball.vy); ball.y = ball.radius; }
+    this._checkPaddleCollision();
+    if (!isFinite(ball.x) || !isFinite(ball.y) || !isFinite(ball.vx) || !isFinite(ball.vy)) this._resetBallToStart();
+  }
+  _checkPaddleCollision() {
+    const ball = this._ball, paddle = this._paddle;
+    const overlaps = (ball.x + ball.radius > paddle.x) && (ball.x - ball.radius < paddle.x + paddle.width) &&
+                     (ball.y + ball.radius > paddle.y) && (ball.y - ball.radius < paddle.y + paddle.height);
+    if (!overlaps || ball.vy <= 0) return;
+    const speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+    const ratio = (ball.x - paddle.x) / paddle.width;
+    if (ratio < 1/3)      { ball.vx = -Math.abs(speed) * 0.7; ball.vy = -Math.abs(speed) * 0.7; }
+    else if (ratio > 2/3) { ball.vx =  Math.abs(speed) * 0.7; ball.vy = -Math.abs(speed) * 0.7; }
+    else                  { ball.vy = -Math.abs(ball.vy); }
+    ball.y = paddle.y - ball.radius;
+  }
+  _resetBallToStart() {
+    const cfg = this._config;
+    this._ball.x = cfg.canvasWidth / 2; this._ball.y = this._paddle.y - cfg.ballRadius;
+    this._ball.vx = 0; this._ball.vy = 0;
+  }
+  _checkBrickCollisions() {
+    const ball = this._ball;
+    for (const brick of this._bricks) {
+      if (!brick.active) continue;
+      const bL = ball.x - ball.radius, bR = ball.x + ball.radius;
+      const bT = ball.y - ball.radius, bB = ball.y + ball.radius;
+      if (!(bR > brick.x && bL < brick.x + brick.width && bB > brick.y && bT < brick.y + brick.height)) continue;
+      const oL = bR - brick.x, oR = brick.x + brick.width - bL;
+      const oT = bB - brick.y, oB = brick.y + brick.height - bT;
+      if (Math.min(oL, oR) < Math.min(oT, oB)) ball.vx = -ball.vx;
+      else ball.vy = -ball.vy;
+      brick.hp -= 1;
+      if (brick.hp <= 0) { brick.active = false; this._score += brick.points; }
+      break;
+    }
+  }
+  _checkBallLost() {
+    const ball = this._ball, cfg = this._config;
+    if (ball.y - ball.radius > cfg.canvasHeight) {
+      this._lives -= 1; this._ballLost = true;
+      this._resetBallToStart();
+      this._paddle.x = cfg.canvasWidth / 2 - this._paddle.width / 2;
+      if (this._lives <= 0) this._gameOver = true;
+    }
+  }
+  _checkLevelComplete() {
+    if (!this.isLevelComplete() || this._levelBonusAwarded) return;
+    this._score += this._config.levelCompletionBonus;
+    this._levelBonusAwarded = true;
+  }
+  getScore()        { return this._score; }
+  getLives()        { return this._lives; }
+  getCurrentLevel() { return this._currentLevel; }
+  getBallState()    { return this._ball   ? { ...this._ball }   : null; }
+  getPaddleState()  { return this._paddle ? { ...this._paddle } : null; }
+  getBricks()       { return this._bricks; }
+  isLevelComplete() { return this._bricks.length > 0 && this._bricks.every(b => !b.active); }
+  isVictory()       { return this.isLevelComplete() && this._currentLevel === this._config.totalLevels; }
+  isBallLost()      { return this._ballLost; }
+  clearBallLost()   { this._ballLost = false; }
+  isGameOver()      { return this._gameOver; }
+  setScore(n)       { this._score = n; }
+  setLives(n)       { this._lives = n; }
+}
+
+// ─── Renderer ─────────────────────────────────────────────────────────────────
+class Renderer {
+  constructor(ctx, config) { this.ctx = ctx; this.config = config; }
+  drawBall(ball) {
+    const { ctx } = this;
+    ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+    ctx.fillStyle = '#00e5ff'; ctx.fill(); ctx.closePath();
+  }
+  drawPaddle(paddle) {
+    const { ctx } = this;
+    ctx.beginPath(); ctx.roundRect(paddle.x, paddle.y, paddle.width, paddle.height, paddle.height / 2);
+    ctx.fillStyle = '#ffffff'; ctx.fill(); ctx.closePath();
+  }
+  drawBricks(bricks) {
+    const { ctx } = this;
+    const colors = { 1: '#4caf50', 2: '#ff9800', 3: '#f44336' };
+    for (const brick of bricks) {
+      if (!brick.active) continue;
+      const opacity = 0.4 + 0.6 * (brick.hp / brick.maxHp);
+      ctx.globalAlpha = opacity;
+      ctx.fillStyle = colors[brick.maxHp] || '#4caf50';
+      ctx.beginPath(); ctx.roundRect(brick.x, brick.y, brick.width, brick.height, 3); ctx.fill();
+      ctx.globalAlpha = opacity * 0.6;
+      ctx.strokeStyle = '#000'; ctx.lineWidth = 1; ctx.stroke(); ctx.closePath();
+    }
+    ctx.globalAlpha = 1;
+  }
+  drawHUD(score, lives, level) {
+    const { ctx, config } = this;
+    ctx.globalAlpha = 1; ctx.fillStyle = '#fff'; ctx.font = 'bold 16px monospace'; ctx.textBaseline = 'top';
+    ctx.textAlign = 'left';   ctx.fillText(`SCORE: ${score}`, 12, 10);
+    ctx.textAlign = 'center'; ctx.fillText(`LEVEL ${level}`, config.canvasWidth / 2, 10);
+    ctx.textAlign = 'right';  ctx.fillText(`LIVES: ${lives}`, config.canvasWidth - 12, 10);
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, 34); ctx.lineTo(config.canvasWidth, 34); ctx.stroke();
+  }
+  drawStartScreen() {
+    const { ctx, config } = this;
+    const cx = config.canvasWidth / 2, cy = config.canvasHeight / 2;
+    ctx.fillStyle = 'rgba(0,0,0,0.82)'; ctx.fillRect(0, 0, config.canvasWidth, config.canvasHeight);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#00e5ff'; ctx.font = 'bold 72px monospace'; ctx.fillText('BRICKS', cx, cy - 50);
+    ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = '20px monospace';
+    ctx.fillText('Click or press SPACE to start', cx, cy + 20);
+  }
+  drawPauseOverlay() {
+    const { ctx, config } = this;
+    const cx = config.canvasWidth / 2, cy = config.canvasHeight / 2;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 0, config.canvasWidth, config.canvasHeight);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 56px monospace'; ctx.fillText('PAUSED', cx, cy - 20);
+    ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font = '18px monospace'; ctx.fillText('Press ESC to resume', cx, cy + 30);
+  }
+  drawLevelTransition(levelNumber) {
+    const { ctx, config } = this;
+    const cx = config.canvasWidth / 2, cy = config.canvasHeight / 2;
+    ctx.fillStyle = 'rgba(0,0,0,0.82)'; ctx.fillRect(0, 0, config.canvasWidth, config.canvasHeight);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 60px monospace'; ctx.fillText(`LEVEL ${levelNumber}`, cx, cy - 20);
+    ctx.fillStyle = 'rgba(255,255,255,0.65)'; ctx.font = '22px monospace'; ctx.fillText('Get ready!', cx, cy + 40);
+  }
+  drawGameOver(score) {
+    const { ctx, config } = this;
+    const cx = config.canvasWidth / 2, cy = config.canvasHeight / 2;
+    ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.fillRect(0, 0, config.canvasWidth, config.canvasHeight);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#f44336'; ctx.font = 'bold 64px monospace'; ctx.fillText('GAME OVER', cx, cy - 50);
+    ctx.fillStyle = '#fff'; ctx.font = '26px monospace'; ctx.fillText(`Score: ${score}`, cx, cy + 10);
+    ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font = '18px monospace'; ctx.fillText('Press R to restart', cx, cy + 55);
+  }
+  drawVictory(score) {
+    const { ctx, config } = this;
+    const cx = config.canvasWidth / 2, cy = config.canvasHeight / 2;
+    ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.fillRect(0, 0, config.canvasWidth, config.canvasHeight);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#00e5ff'; ctx.font = 'bold 64px monospace'; ctx.fillText('YOU WIN!', cx, cy - 50);
+    ctx.fillStyle = '#fff'; ctx.font = '26px monospace'; ctx.fillText(`Score: ${score}`, cx, cy + 10);
+    ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font = '18px monospace'; ctx.fillText('Press R to restart', cx, cy + 55);
+  }
+  _drawBallLostMessage() {
+    const { ctx, config } = this;
+    const cx = config.canvasWidth / 2, cy = config.canvasHeight / 2;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 0, config.canvasWidth, config.canvasHeight);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ff9800'; ctx.font = 'bold 36px monospace'; ctx.fillText('Ball Lost', cx, cy - 20);
+    ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = '20px monospace'; ctx.fillText('Press SPACE to continue', cx, cy + 25);
+  }
+  render(gameState, engine) {
+    const { ctx, config } = this;
+    ctx.clearRect(0, 0, config.canvasWidth, config.canvasHeight);
+    ctx.fillStyle = '#111'; ctx.fillRect(0, 0, config.canvasWidth, config.canvasHeight);
+    switch (gameState) {
+      case GameState.PLAYING:
+        this.drawBricks(engine.getBricks()); this.drawBall(engine.getBallState());
+        this.drawPaddle(engine.getPaddleState()); this.drawHUD(engine.getScore(), engine.getLives(), engine.getCurrentLevel());
+        break;
+      case GameState.PAUSED:
+        this.drawBricks(engine.getBricks()); this.drawBall(engine.getBallState());
+        this.drawPaddle(engine.getPaddleState()); this.drawHUD(engine.getScore(), engine.getLives(), engine.getCurrentLevel());
+        this.drawPauseOverlay(); break;
+      case GameState.BALL_LOST:
+        this.drawBricks(engine.getBricks()); this.drawPaddle(engine.getPaddleState());
+        this.drawHUD(engine.getScore(), engine.getLives(), engine.getCurrentLevel());
+        this._drawBallLostMessage(); break;
+      case GameState.LEVEL_TRANSITION: this.drawLevelTransition(engine.getCurrentLevel()); break;
+      case GameState.GAME_OVER:  this.drawGameOver(engine.getScore()); break;
+      case GameState.VICTORY:    this.drawVictory(engine.getScore()); break;
+      default:                   this.drawStartScreen(); break;
+    }
+  }
+}
+
+// ─── Game ─────────────────────────────────────────────────────────────────────
+class Game {
+  constructor(canvas) {
+    this._canvas = canvas;
+    canvas.width  = GameConfig.canvasWidth;
+    canvas.height = GameConfig.canvasHeight;
+    this._engine   = new GameEngine(GameConfig);
+    this._renderer = new Renderer(canvas.getContext('2d'), GameConfig);
+    this._input    = new InputHandler(canvas);
+    this._engine.setInputHandler(this._input);
+    this._state = GameState.START_SCREEN;
+    this._levelTransitionTime    = null;
+    this._levelTransitionVictory = false;
+    this._lastTimestamp = null;
+    this._loop = this._loop.bind(this);
+    canvas.addEventListener('click', () => {
+      if (this._state === GameState.START_SCREEN) this._startGame();
+      else if (this._state === GameState.BALL_LOST) { this._engine.launchBall(); this.setState(GameState.PLAYING); }
+    });
+  }
+  getState() { return this._state; }
+  setState(newState) {
+    this._state = newState;
+    if (newState === GameState.LEVEL_TRANSITION) this._levelTransitionTime = performance.now();
+  }
+  reset() {
+    this._engine.setScore(0); this._engine.setLives(3);
+    this._engine.initLevel(1); this.setState(GameState.START_SCREEN);
+  }
+  start() { this._lastTimestamp = null; requestAnimationFrame(this._loop); }
+  _loop(timestamp) {
+    const dt = this._lastTimestamp === null ? 16 : Math.min(timestamp - this._lastTimestamp, 100);
+    this._lastTimestamp = timestamp;
+    this._input.update();
+    if (this._state === GameState.PLAYING && (this._input.wasKeyPressed('Escape') || this._input.wasKeyPressed('p')))
+      this.setState(GameState.PAUSED);
+    else if (this._state === GameState.PAUSED && (this._input.wasKeyPressed('Escape') || this._input.wasKeyPressed('p')))
+      this.setState(GameState.PLAYING);
+    if (this._state === GameState.PLAYING) this._engine.update(dt);
+    this._checkStateTransitions(timestamp);
+    this._renderer.render(this._state, this._engine);
+    requestAnimationFrame(this._loop);
+  }
+  _checkStateTransitions(timestamp) {
+    const state = this._state;
+    if (state === GameState.PLAYING) {
+      if (this._engine.isBallLost()) {
+        this._engine.clearBallLost();
+        this.setState(this._engine.isGameOver() ? GameState.GAME_OVER : GameState.BALL_LOST);
+        return;
+      }
+      if (this._engine.isLevelComplete()) {
+        this._levelTransitionVictory = this._engine.isVictory();
+        this.setState(GameState.LEVEL_TRANSITION);
+        return;
+      }
+    }
+    if (state === GameState.LEVEL_TRANSITION && (timestamp - this._levelTransitionTime) >= 2000) {
+      if (this._levelTransitionVictory) { this.setState(GameState.VICTORY); }
+      else { this._engine.initLevel(this._engine.getCurrentLevel() + 1); this._engine.launchBall(); this.setState(GameState.PLAYING); }
+      return;
+    }
+    if (state === GameState.START_SCREEN && this._input.wasKeyPressed(' ')) { this._startGame(); return; }
+    if (state === GameState.BALL_LOST    && this._input.wasKeyPressed(' ')) { this._engine.launchBall(); this.setState(GameState.PLAYING); return; }
+    if ((state === GameState.GAME_OVER || state === GameState.VICTORY) && (this._input.wasKeyPressed('r') || this._input.wasKeyPressed('R'))) { this.reset(); }
+  }
+  _startGame() { this._engine.initLevel(1); this.setState(GameState.PLAYING); this._engine.launchBall(); }
+}
+
+// ─── Bootstrap ────────────────────────────────────────────────────────────────
+const canvas = document.getElementById('gameCanvas');
+new Game(canvas).start();
+  </script>
+</body>
+</html>
