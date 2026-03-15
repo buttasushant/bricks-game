@@ -248,3 +248,31 @@ describe('Restart / reset', () => {
     expect(engine.isGameOver()).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 8. Bug condition exploration — Level 1 ball speed too slow
+//    Validates: Requirements 1.1, 1.2
+//    EXPECTED TO FAIL on unfixed code (ballInitialSpeed = 0.3)
+//    Failure confirms the bug exists.
+// ---------------------------------------------------------------------------
+describe('Bug condition exploration - Level 1 ball speed too slow', () => {
+  it('Level 1 launch speed should be >= 0.5 px/ms', () => {
+    const engine = new GameEngine(GameConfig);
+    engine.initLevel(1);
+    engine.launchBall();
+    const ball = engine.getBallState();
+    const speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+    // On unfixed code: speed = 0.3, which is below 0.5 — test FAILS (confirms bug)
+    expect(speed).toBeGreaterThanOrEqual(0.5);
+  });
+
+  it('Level 2 launch speed should be >= 0.52 px/ms', () => {
+    const engine = new GameEngine(GameConfig);
+    engine.initLevel(2);
+    engine.launchBall();
+    const ball = engine.getBallState();
+    const speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+    // On unfixed code: speed = 0.32, which is below 0.52 — test FAILS (confirms bug)
+    expect(speed).toBeGreaterThanOrEqual(0.52);
+  });
+});

@@ -19,7 +19,7 @@ export const GameConfig = {
   canvasWidth:          800,
   canvasHeight:         600,
   ballRadius:           8,
-  ballInitialSpeed:     0.3,   // pixels/ms
+  ballInitialSpeed:     0.5,   // pixels/ms
   ballSpeedIncrement:   0.02,  // added per level
   paddleWidth:          100,
   paddleHeight:         12,
