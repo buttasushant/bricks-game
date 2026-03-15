@@ -16,7 +16,7 @@
   - Mark task complete when test is written, run, and failure is documented
   - _Requirements: 1.1, 1.2_
 
-- [~] 2. Write preservation property tests (BEFORE implementing fix)
+- [ ] 2. Write preservation property tests (BEFORE implementing fix)
   - **Property 2: Preservation** - Per-Level Speed Progression Formula
   - **IMPORTANT**: Follow observation-first methodology
   - Observe: on unfixed code, `initLevel(n)` sets `_levelSpeed = 0.3 + (n-1) * 0.02` for all n in 1–10
@@ -37,7 +37,7 @@
     - _Preservation: Speed progression formula, 45-degree launch angle, restart behavior, and all other GameConfig values remain unchanged_
     - _Requirements: 2.1, 2.2, 3.1, 3.2, 3.3, 3.4_
 
-  - [~] 3.2 Verify bug condition exploration test now passes
+  - [ ] 3.2 Verify bug condition exploration test now passes
     - **Property 1: Expected Behavior** - Level 1 Ball Speed Is Fast Enough
     - **IMPORTANT**: Re-run the SAME test from task 1 - do NOT write a new test
     - The test from task 1 encodes the expected behavior (speed >= 0.5 at Level 1)
@@ -45,13 +45,13 @@
     - **EXPECTED OUTCOME**: Test PASSES — speed is now `0.5` at Level 1 (confirms bug is fixed)
     - _Requirements: 2.1, 2.2_
 
-  - [~] 3.3 Verify preservation tests still pass
+  - [ ] 3.3 Verify preservation tests still pass
     - **Property 2: Preservation** - Per-Level Speed Progression Formula
     - **IMPORTANT**: Re-run the SAME tests from task 2 - do NOT write new tests
     - Run preservation property tests from step 2
     - **EXPECTED OUTCOME**: Tests PASS — formula `ballInitialSpeed + (n-1) * ballSpeedIncrement` still holds, only the base value changed
     - Confirm no regressions in angle, formula, or restart behavior
 
-- [~] 4. Checkpoint - Ensure all tests pass
+- [ ] 4. Checkpoint - Ensure all tests pass
   - Run the full test suite (`npx vitest --run`)
   - Ensure all tests pass, ask the user if questions arise
