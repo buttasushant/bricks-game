@@ -30,6 +30,13 @@ const GameState = {
   VICTORY:          'VICTORY',
 };
 
+const PowerUpType = {
+  MULTI_BALL:  'MULTI_BALL',
+  EXTRA_LIFE:  'EXTRA_LIFE',
+  WIDE_PADDLE: 'WIDE_PADDLE',
+  SLOW_BALL:   'SLOW_BALL',
+};
+
 const GameConfig = {
   canvasWidth:          800,
   canvasHeight:         600,
@@ -46,7 +53,76 @@ const GameConfig = {
   brickOffsetLeft:      30,
   levelCompletionBonus: 500,
   totalLevels:          10,
+  // Power-up config
+  powerUpSpawnChance:   0.20,
+  powerUpFallSpeed:     0.15,  // pixels/ms
+  powerUpTokenWidth:    60,
+  powerUpTokenHeight:   22,
+  widePaddleMultiplier: 1.75,
+  widePaddleDuration:   10000, // ms
+  slowBallMultiplier:   0.50,
+  slowBallDuration:     8000,  // ms
+  maxLives:             9,
 };
+
+// ─── PowerUpManager ──────────────────────────────────────────────────────────
+class PowerUpManager {
+  constructor(config) {
+    this._config = config;
+    this._tokens = [];
+    this.onCollect = null;
+  }
+
+  onBrickDestroyed(brick) {
+    if (Math.random() >= this._config.powerUpSpawnChance) return;
+    const types = Object.values(PowerUpType);
+    const type = types[Math.floor(Math.random() * types.length)];
+    this._tokens.push({
+      x: brick.x + brick.width / 2,
+      y: brick.y + brick.height / 2,
+      type,
+    });
+  }
+
+  update(dt, paddle) {
+    const { powerUpFallSpeed, canvasHeight, powerUpTokenWidth, powerUpTokenHeight } = this._config;
+    const remaining = [];
+    for (const token of this._tokens) {
+      token.y += powerUpFallSpeed * dt;
+
+      // Check bottom boundary
+      if (token.y > canvasHeight) continue;
+
+      // Check paddle overlap (token centered at token.x, token.y)
+      const tokenLeft   = token.x - powerUpTokenWidth / 2;
+      const tokenRight  = token.x + powerUpTokenWidth / 2;
+      const tokenTop    = token.y - powerUpTokenHeight / 2;
+      const tokenBottom = token.y + powerUpTokenHeight / 2;
+
+      const paddleRight  = paddle.x + paddle.width;
+      const paddleBottom = paddle.y + paddle.height;
+
+      const overlaps = tokenRight > paddle.x && tokenLeft < paddleRight &&
+                       tokenBottom > paddle.y && tokenTop < paddleBottom;
+
+      if (overlaps) {
+        if (this.onCollect) this.onCollect(token.type);
+        continue;
+      }
+
+      remaining.push(token);
+    }
+    this._tokens = remaining;
+  }
+
+  clearTokens() {
+    this._tokens = [];
+  }
+
+  getTokens() {
+    return this._tokens;
+  }
+}
 
 // ─── Levels ──────────────────────────────────────────────────────────────────
 const b1 = { hp: 1, points: 10 };
@@ -171,7 +247,7 @@ class GameEngine {
     this._score = 0;
     this._lives = 5;
     this._currentLevel = 1;
-    this._ball = null;
+    this._balls = [];
     this._paddle = null;
     this._bricks = [];
     this._inputHandler = null;
@@ -180,6 +256,10 @@ class GameEngine {
     this._gameOver = false;
     this._levelBonusAwarded = false;
     this._levelSpeed = config.ballInitialSpeed;
+    this._widePaddleTimer = 0;
+    this._slowBallTimer = 0;
+    this._paddleBaseWidth = config.paddleWidth;
+    this.onBrickDestroyed = null;
   }
   setInputHandler(ih) {
     this._inputHandler = ih;
@@ -210,31 +290,105 @@ class GameEngine {
         });
       }
     }
+    this._widePaddleTimer = 0;
+    this._slowBallTimer = 0;
+    this._paddleBaseWidth = cfg.paddleWidth;
     this._paddle = {
       x: cfg.canvasWidth / 2 - cfg.paddleWidth / 2,
       y: cfg.canvasHeight - 40,
       width: cfg.paddleWidth, height: cfg.paddleHeight, speed: cfg.paddleSpeed,
     };
-    this._ball = {
+    this._balls = [{
       x: cfg.canvasWidth / 2, y: this._paddle.y - cfg.ballRadius,
-      vx: 0, vy: 0, radius: cfg.ballRadius,
-    };
+      vx: 0, vy: 0, radius: cfg.ballRadius, _baseSpeed: this._levelSpeed,
+    }];
     if (this._inputHandler) this._lastMouseX = this._inputHandler.getMouseX();
   }
   launchBall() {
-    if (!this._ball || this._ball.vx !== 0 || this._ball.vy !== 0) return;
-    const speed = this._levelSpeed;
+    if (this._balls.length === 0) return;
+    const ball = this._balls[0];
+    if (ball.vx !== 0 || ball.vy !== 0) return;
+    const speed = this._slowBallTimer > 0
+      ? this._levelSpeed * this._config.slowBallMultiplier
+      : this._levelSpeed;
     const angle = Math.PI / 4;
-    this._ball.vx =  speed * Math.cos(angle);
-    this._ball.vy = -speed * Math.sin(angle);
+    ball.vx =  speed * Math.cos(angle);
+    ball.vy = -speed * Math.sin(angle);
+  }
+  applyPowerUp(type) {
+    const cfg = this._config;
+    switch (type) {
+      case PowerUpType.MULTI_BALL: {
+        const existing = this._balls.slice();
+        for (const ball of existing) {
+          this._balls.push({
+            x: ball.x, y: ball.y,
+            vx: ball.vx, vy: ball.vy,
+            radius: ball.radius,
+            _baseSpeed: ball._baseSpeed,
+          });
+        }
+        break;
+      }
+      case PowerUpType.EXTRA_LIFE:
+        this._lives = Math.min(this._lives + 1, cfg.maxLives);
+        break;
+      case PowerUpType.WIDE_PADDLE:
+        this._paddle.width = this._paddleBaseWidth * cfg.widePaddleMultiplier;
+        this._widePaddleTimer = cfg.widePaddleDuration;
+        // Clamp paddle position after widening
+        this._paddle.x = Math.max(0, Math.min(this._paddle.x, cfg.canvasWidth - this._paddle.width));
+        break;
+      case PowerUpType.SLOW_BALL: {
+        const multiplier = cfg.slowBallMultiplier;
+        for (const ball of this._balls) {
+          const speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+          if (speed > 0) {
+            const targetSpeed = ball._baseSpeed * multiplier;
+            const scale = targetSpeed / speed;
+            ball.vx *= scale;
+            ball.vy *= scale;
+          }
+        }
+        this._slowBallTimer = cfg.slowBallDuration;
+        break;
+      }
+      default:
+        console.warn(`applyPowerUp: unknown type "${type}"`);
+    }
   }
   update(dt) {
-    if (!this._ball || !this._paddle) return;
+    if (!this._paddle) return;
     this._updatePaddle(dt);
-    this._updateBall(dt);
+    for (const ball of this._balls) this._updateBall(ball, dt);
     this._checkBrickCollisions();
     this._checkBallLost();
     this._checkLevelComplete();
+    // Wide paddle timer countdown
+    if (this._widePaddleTimer > 0) {
+      this._widePaddleTimer -= dt;
+      if (this._widePaddleTimer <= 0) {
+        this._widePaddleTimer = 0;
+        this._paddle.width = this._paddleBaseWidth;
+        // Clamp paddle position after restoring width
+        this._paddle.x = Math.max(0, Math.min(this._paddle.x, this._config.canvasWidth - this._paddle.width));
+      }
+    }
+    // Slow ball timer countdown
+    if (this._slowBallTimer > 0) {
+      this._slowBallTimer -= dt;
+      if (this._slowBallTimer <= 0) {
+        this._slowBallTimer = 0;
+        for (const ball of this._balls) {
+          const speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+          if (speed > 0) {
+            const scale = ball._baseSpeed / speed;
+            ball.vx *= scale;
+            ball.vy *= scale;
+          }
+        }
+      }
+    }
   }
   _updatePaddle(dt) {
     const input = this._inputHandler, paddle = this._paddle, cfg = this._config;
@@ -250,18 +404,21 @@ class GameEngine {
     }
     paddle.x = Math.max(0, Math.min(paddle.x, cfg.canvasWidth - paddle.width));
   }
-  _updateBall(dt) {
-    const ball = this._ball, cfg = this._config;
+  _updateBall(ball, dt) {
+    const cfg = this._config;
     ball.x += ball.vx * dt;
     ball.y += ball.vy * dt;
     if (ball.x - ball.radius <= 0)               { ball.vx =  Math.abs(ball.vx); ball.x = ball.radius; }
     if (ball.x + ball.radius >= cfg.canvasWidth)  { ball.vx = -Math.abs(ball.vx); ball.x = cfg.canvasWidth - ball.radius; }
     if (ball.y - ball.radius <= 0)               { ball.vy =  Math.abs(ball.vy); ball.y = ball.radius; }
-    this._checkPaddleCollision();
-    if (!isFinite(ball.x) || !isFinite(ball.y) || !isFinite(ball.vx) || !isFinite(ball.vy)) this._resetBallToStart();
+    this._checkPaddleCollision(ball);
+    if (!isFinite(ball.x) || !isFinite(ball.y) || !isFinite(ball.vx) || !isFinite(ball.vy)) {
+      ball.x = cfg.canvasWidth / 2; ball.y = this._paddle.y - cfg.ballRadius;
+      ball.vx = 0; ball.vy = 0;
+    }
   }
-  _checkPaddleCollision() {
-    const ball = this._ball, paddle = this._paddle;
+  _checkPaddleCollision(ball) {
+    const paddle = this._paddle;
     const overlaps = ball.x + ball.radius > paddle.x && ball.x - ball.radius < paddle.x + paddle.width &&
                      ball.y + ball.radius > paddle.y && ball.y - ball.radius < paddle.y + paddle.height;
     if (!overlaps || ball.vy <= 0) return;
@@ -274,29 +431,38 @@ class GameEngine {
   }
   _resetBallToStart() {
     const cfg = this._config;
-    this._ball.x = cfg.canvasWidth / 2; this._ball.y = this._paddle.y - cfg.ballRadius;
-    this._ball.vx = 0; this._ball.vy = 0;
+    this._balls = [{
+      x: cfg.canvasWidth / 2, y: this._paddle.y - cfg.ballRadius,
+      vx: 0, vy: 0, radius: cfg.ballRadius, _baseSpeed: this._levelSpeed,
+    }];
   }
   _checkBrickCollisions() {
-    const ball = this._ball;
-    for (const brick of this._bricks) {
-      if (!brick.active) continue;
-      const bL = ball.x - ball.radius, bR = ball.x + ball.radius;
-      const bT = ball.y - ball.radius, bB = ball.y + ball.radius;
-      if (!(bR > brick.x && bL < brick.x + brick.width && bB > brick.y && bT < brick.y + brick.height)) continue;
-      const oL = bR - brick.x, oR = brick.x + brick.width - bL;
-      const oT = bB - brick.y, oB = brick.y + brick.height - bT;
-      if (Math.min(oL, oR) < Math.min(oT, oB)) ball.vx = -ball.vx;
-      else ball.vy = -ball.vy;
-      brick.hp -= 1;
-      if (brick.hp <= 0) { brick.active = false; this._score += brick.points; }
-      break;
+    for (const ball of this._balls) {
+      for (const brick of this._bricks) {
+        if (!brick.active) continue;
+        const bL = ball.x - ball.radius, bR = ball.x + ball.radius;
+        const bT = ball.y - ball.radius, bB = ball.y + ball.radius;
+        if (!(bR > brick.x && bL < brick.x + brick.width && bB > brick.y && bT < brick.y + brick.height)) continue;
+        const oL = bR - brick.x, oR = brick.x + brick.width - bL;
+        const oT = bB - brick.y, oB = brick.y + brick.height - bT;
+        if (Math.min(oL, oR) < Math.min(oT, oB)) ball.vx = -ball.vx;
+        else ball.vy = -ball.vy;
+        brick.hp -= 1;
+        if (brick.hp <= 0) {
+          brick.active = false;
+          this._score += brick.points;
+          if (this.onBrickDestroyed) this.onBrickDestroyed(brick);
+        }
+        break;
+      }
     }
   }
   _checkBallLost() {
-    const ball = this._ball, cfg = this._config;
-    if (ball.y - ball.radius > cfg.canvasHeight) {
-      this._lives -= 1; this._ballLost = true;
+    const cfg = this._config;
+    this._balls = this._balls.filter(ball => ball.y - ball.radius <= cfg.canvasHeight);
+    if (this._balls.length === 0) {
+      this._lives -= 1;
+      this._ballLost = true;
       this._resetBallToStart();
       this._paddle.x = cfg.canvasWidth / 2 - this._paddle.width / 2;
       if (this._lives <= 0) this._gameOver = true;
@@ -310,7 +476,8 @@ class GameEngine {
   getScore()        { return this._score; }
   getLives()        { return this._lives; }
   getCurrentLevel() { return this._currentLevel; }
-  getBallState()    { return this._ball   ? { ...this._ball }   : null; }
+  getBalls()        { return this._balls.map(b => ({ ...b })); }
+  getBallState()    { return this._balls.length > 0 ? { ...this._balls[0] } : null; }
   getPaddleState()  { return this._paddle ? { ...this._paddle } : null; }
   getBricks()       { return this._bricks; }
   isLevelComplete() { return this._bricks.length > 0 && this._bricks.every(b => !b.active); }
@@ -325,15 +492,49 @@ class GameEngine {
 // ─── Renderer ─────────────────────────────────────────────────────────────────
 class Renderer {
   constructor(ctx, config) { this.ctx = ctx; this.config = config; }
-  drawBall(ball) {
+  drawBalls(balls, isSlow) {
     const { ctx } = this;
-    ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
-    ctx.fillStyle = '#00e5ff'; ctx.fill(); ctx.closePath();
+    const fillColor = isSlow ? '#2196f3' : '#00e5ff';
+    for (const ball of balls) {
+      ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+      ctx.fillStyle = fillColor; ctx.fill(); ctx.closePath();
+    }
   }
-  drawPaddle(paddle) {
+  drawPaddle(paddle, isWide) {
     const { ctx } = this;
     ctx.beginPath(); ctx.roundRect(paddle.x, paddle.y, paddle.width, paddle.height, paddle.height / 2);
-    ctx.fillStyle = '#ffffff'; ctx.fill(); ctx.closePath();
+    ctx.fillStyle = isWide ? '#ff9800' : '#ffffff'; ctx.fill(); ctx.closePath();
+  }
+  drawPowerUpTokens(tokens) {
+    const { ctx, config } = this;
+    const colorMap = {
+      [PowerUpType.MULTI_BALL]:  '#00e5ff',
+      [PowerUpType.EXTRA_LIFE]:  '#4caf50',
+      [PowerUpType.WIDE_PADDLE]: '#ff9800',
+      [PowerUpType.SLOW_BALL]:   '#2196f3',
+    };
+    const labelMap = {
+      [PowerUpType.MULTI_BALL]:  'MULTI',
+      [PowerUpType.EXTRA_LIFE]:  '+LIFE',
+      [PowerUpType.WIDE_PADDLE]: 'WIDE',
+      [PowerUpType.SLOW_BALL]:   'SLOW',
+    };
+    const w = config.powerUpTokenWidth;
+    const h = config.powerUpTokenHeight;
+    for (const token of tokens) {
+      const x = token.x - w / 2;
+      const y = token.y - h / 2;
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, h / 2);
+      ctx.fillStyle = colorMap[token.type] || '#ffffff';
+      ctx.fill();
+      ctx.closePath();
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 11px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(labelMap[token.type] || token.type, token.x, token.y);
+    }
   }
   drawBricks(bricks) {
     const { ctx } = this;
@@ -409,21 +610,30 @@ class Renderer {
     ctx.fillStyle = '#ff9800'; ctx.font = 'bold 36px monospace'; ctx.fillText('Ball Lost', cx, cy - 20);
     ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = '20px monospace'; ctx.fillText('Press SPACE to continue', cx, cy + 25);
   }
-  render(gameState, engine) {
+  render(gameState, engine, powerUpManager) {
     const { ctx, config } = this;
     ctx.clearRect(0, 0, config.canvasWidth, config.canvasHeight);
     ctx.fillStyle = '#111'; ctx.fillRect(0, 0, config.canvasWidth, config.canvasHeight);
+    const isWide = engine._widePaddleTimer > 0;
+    const isSlow = engine._slowBallTimer > 0;
     switch (gameState) {
       case GameState.PLAYING:
-        this.drawBricks(engine.getBricks()); this.drawBall(engine.getBallState());
-        this.drawPaddle(engine.getPaddleState()); this.drawHUD(engine.getScore(), engine.getLives(), engine.getCurrentLevel());
+        this.drawBricks(engine.getBricks());
+        this.drawBalls(engine.getBalls(), isSlow);
+        this.drawPaddle(engine.getPaddleState(), isWide);
+        if (powerUpManager) this.drawPowerUpTokens(powerUpManager.getTokens());
+        this.drawHUD(engine.getScore(), engine.getLives(), engine.getCurrentLevel());
         break;
       case GameState.PAUSED:
-        this.drawBricks(engine.getBricks()); this.drawBall(engine.getBallState());
-        this.drawPaddle(engine.getPaddleState()); this.drawHUD(engine.getScore(), engine.getLives(), engine.getCurrentLevel());
+        this.drawBricks(engine.getBricks());
+        this.drawBalls(engine.getBalls(), isSlow);
+        this.drawPaddle(engine.getPaddleState(), isWide);
+        if (powerUpManager) this.drawPowerUpTokens(powerUpManager.getTokens());
+        this.drawHUD(engine.getScore(), engine.getLives(), engine.getCurrentLevel());
         this.drawPauseOverlay(); break;
       case GameState.BALL_LOST:
-        this.drawBricks(engine.getBricks()); this.drawPaddle(engine.getPaddleState());
+        this.drawBricks(engine.getBricks());
+        this.drawPaddle(engine.getPaddleState(), isWide);
         this.drawHUD(engine.getScore(), engine.getLives(), engine.getCurrentLevel());
         this._drawBallLostMessage(); break;
       case GameState.LEVEL_TRANSITION: this.drawLevelTransition(engine.getCurrentLevel()); break;
@@ -444,6 +654,9 @@ class Game {
     this._renderer = new Renderer(canvas.getContext('2d'), GameConfig);
     this._input    = new InputHandler(canvas);
     this._engine.setInputHandler(this._input);
+    this._powerUpManager = new PowerUpManager(GameConfig);
+    this._powerUpManager.onCollect = (type) => this._engine.applyPowerUp(type);
+    this._engine.onBrickDestroyed = (brick) => this._powerUpManager.onBrickDestroyed(brick);
     this._state = GameState.START_SCREEN;
     this._levelTransitionTime    = null;
     this._levelTransitionVictory = false;
@@ -472,9 +685,12 @@ class Game {
       this.setState(GameState.PAUSED);
     else if (this._state === GameState.PAUSED && (this._input.wasKeyPressed('Escape') || this._input.wasKeyPressed('p')))
       this.setState(GameState.PLAYING);
-    if (this._state === GameState.PLAYING) this._engine.update(dt);
+    if (this._state === GameState.PLAYING) {
+      this._engine.update(dt);
+      this._powerUpManager.update(dt, this._engine.getPaddleState());
+    }
     this._checkStateTransitions(timestamp);
-    this._renderer.render(this._state, this._engine);
+    this._renderer.render(this._state, this._engine, this._powerUpManager);
     requestAnimationFrame(this._loop);
   }
   _checkStateTransitions(timestamp) {
@@ -482,6 +698,7 @@ class Game {
     if (state === GameState.PLAYING) {
       if (this._engine.isBallLost()) {
         this._engine.clearBallLost();
+        this._powerUpManager.clearTokens();
         this.setState(this._engine.isGameOver() ? GameState.GAME_OVER : GameState.BALL_LOST);
         return;
       }
@@ -493,7 +710,12 @@ class Game {
     }
     if (state === GameState.LEVEL_TRANSITION && (timestamp - this._levelTransitionTime) >= 2000) {
       if (this._levelTransitionVictory) { this.setState(GameState.VICTORY); }
-      else { this._engine.initLevel(this._engine.getCurrentLevel() + 1); this._engine.launchBall(); this.setState(GameState.PLAYING); }
+      else {
+        this._engine.initLevel(this._engine.getCurrentLevel() + 1);
+        this._engine.launchBall();
+        this._powerUpManager.clearTokens();
+        this.setState(GameState.PLAYING);
+      }
       return;
     }
     if (state === GameState.START_SCREEN && this._input.wasKeyPressed(' ')) { this._startGame(); return; }
